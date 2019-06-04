@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration monitorInterval="10">
+    <Appenders>
+        <Console name="FileBeat">
+            <CxJSONLayout compact="true" />
+        </Console>
+        <Console name="Human">
+            <PatternLayout pattern="%d %M %m %X %ex%n"/>
+        </Console>
+        <Console name="Human2">
+            <CxJSONLayout compact="false" location="true" />
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Logger name="com.cathaypacific" level="${env:LOG_LEVEL:-INFO}" additivity="false">
+            <AppenderRef ref="${env:LOG_APPENDER:-FileBeat}"/>
+        </Logger>
+        <Root level="INFO">
+            <AppenderRef ref="Human"/>
+        </Root>
+    </Loggers>
+</Configuration>
