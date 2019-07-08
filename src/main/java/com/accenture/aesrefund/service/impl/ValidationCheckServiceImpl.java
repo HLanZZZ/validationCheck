@@ -5,6 +5,7 @@ package com.accenture.aesrefund.service.impl;
 import com.accenture.aesrefund.constant.ValidationEnum;
 import com.accenture.aesrefund.model.AncillaryBookingProducts;
 import com.accenture.aesrefund.model.EmdInfoVo;
+import com.accenture.aesrefund.model.ErrorBodyVo;
 import com.accenture.aesrefund.request.ValidationCheckRequest;
 import com.accenture.aesrefund.response.AncillaryBookingResponse;
 import com.accenture.aesrefund.response.ValidationCheckResponse;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -34,12 +36,14 @@ import java.util.List;
 @Service
 public class ValidationCheckServiceImpl implements ValidationCheckService {
 
-    private static final String  BOOKING_URI = "http://localhost:8080/getAllBookings?";
+    private static final String  BOOKING_URI = "http://localhost:8081/getAllBookings?";
 
     private final Gson gson = new GsonBuilder().setDateFormat("yyyy_MM_dd").create();
 
     @Autowired
     private RestTemplate restTemplate ;
+
+    Error error = new Error();
 
     @Override
     public ValidationCheckResponse getValidationCheckResponse(ValidationCheckRequest request) throws ConnectTimeoutException, ParseException {
@@ -49,6 +53,8 @@ public class ValidationCheckServiceImpl implements ValidationCheckService {
         // First Api data
 
         AncillaryBookingResponse ancillaryBookingResponse = this.getAncillaryBookingResponse(uri);
+
+
         // foreach the AncillaryBookingProducts  and get the passengerInfo'familyName&givenName
         List<AncillaryBookingProducts>  productsList = ancillaryBookingResponse.getAncillaryProducts();
 
@@ -57,7 +63,7 @@ public class ValidationCheckServiceImpl implements ValidationCheckService {
         //get request AncillaryProducts list
         List<AncillaryProducts>  productsList1 = new ArrayList<>();
 
-        Error error = new Error();
+
         RefundInfo refundInfo = new RefundInfo();
         Validation validation =new Validation();
         // if productList == null  get successful response and the validation changed
@@ -81,7 +87,6 @@ public class ValidationCheckServiceImpl implements ValidationCheckService {
         ValidationCheckResponse validationCheckResponse = new ValidationCheckResponse();
 
         List<AncillaryProducts>  resultList = new ArrayList<>();
-
         continueOut :
         // requestBody   size： 2
        for (AncillaryProducts ancillaryProducts :list){
@@ -219,8 +224,6 @@ public class ValidationCheckServiceImpl implements ValidationCheckService {
         refundInfo.setAncillaryProducts(resultList);
 
 
-
-
         validationCheckResponse.setError(error);
         validationCheckResponse.setRefundInfo(refundInfo);
         //Check if any ancillaryProducts with same id
@@ -231,9 +234,11 @@ public class ValidationCheckServiceImpl implements ValidationCheckService {
         // Check if this request time-out
 
         ResponseEntity<String> responseEntity =restTemplate.getForEntity(uri,String.class);
+
+        ErrorBodyVo errorBodyVo = new ErrorBodyVo();
+
 //        ResponseEntity<RefundInfo> responseEntity =restTemplate.getForEntity(uri,RefundInfo.class);
         System.out.println(responseEntity.getBody());
-
 
         // 这里已经获得了 第一条Api 拿到的值 和post请求的值进行对比  现在就是为了拿到第二条Api 的返回结果 其结果返回样式 其实就是ValidationCheckResponse的最后结果
 
@@ -243,17 +248,42 @@ public class ValidationCheckServiceImpl implements ValidationCheckService {
         String strBody = null;
 
         if (responseEntity.getStatusCodeValue() == 200) {
-//            resp.setRloc(responseEntity.getBody().getRloc());
-//            resp.setAncillaryProducts(responseEntity.getBody().getAncillaryProducts());
             strBody = responseEntity.getBody();
         }
         try {
-//            ancillaryBookingResponse = gson.fromJson(strBody,AncillaryBookingResponse.class);
             ancillaryBookingResponse = objectMapper.readValue(strBody, AncillaryBookingResponse.class);
 
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        // response == System error and errorBody accept it  when response'statusCodeValue == 403
+        if (responseEntity.getStatusCodeValue() == 403){
+
+            strBody = responseEntity.getBody();
+
+            try {
+                errorBodyVo = objectMapper.readValue(strBody, ErrorBodyVo.class);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            // judge if errorBody code == AESSS_ERR_EOO1
+            if (errorBodyVo.getCode().equals("AESSS_ERR_E001")){
+                error.setCode("VU_AESRSH_U001");
+                error.setStatus("unidentified");
+                error.setMessage("No record for this rloc in the database");
+                error.setDetail("No record for this rloc in the database");
+            }
+            // judge if errorBody code == AESSS_ERR_EOO4
+            if (errorBodyVo.getCode().equals("AESSS_ERR_E004")){
+                error.setCode("VU_AESRSH_U002");
+                error.setStatus("unidentified");
+                error.setMessage("More than one matched record in the database");
+                error.setDetail("More than one matched record in the database");
+            }
+        }
+
 
         return ancillaryBookingResponse;
 
